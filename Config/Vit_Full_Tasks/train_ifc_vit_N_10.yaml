@@ -1,0 +1,24 @@
+IFC:
+  encoder:
+    type: "vit"
+    paras:
+      latent: None
+  classfiers:
+    type: "mlp"
+    numbers: 1
+    order: "velocity,angle,size,how long ago?"
+
+  train:
+    optimzer: "Adam"
+    lr: 0.001
+    num_epochs: 500
+    e_stops: 50
+    batch_size: 40
+
+  Data_In:
+    seq_len: 60
+    spatial_x: 128
+    spatial_y: 512
+    path: "/root/autodl-tmp/HSPS/IFC/Dataset/216_cases/03_01_Data.npz"
+  Save:
+    path: "Checkpoints/IFC_Vit_N_10"

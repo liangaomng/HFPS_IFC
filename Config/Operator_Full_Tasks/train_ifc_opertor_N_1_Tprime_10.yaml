@@ -1,0 +1,26 @@
+IFC:
+  encoder:
+    type: "operator"
+    paras:
+      latent: 1024
+  classfiers:
+    type: "mlp"
+    numbers: 4
+    order: "velocity,angle,size,how long ago?"
+    classes: 3 # for every classifer, how many classes
+
+  train:
+    optimzer: "Adam"
+    lr: 0.001
+    num_epochs: 500
+    e_stops: 100
+    batch_size: 10
+
+  Data_In:
+    seq_len: 1 # 20*0.05=1s
+    spatial_x: 64
+    spatial_y: 100
+    T_prime_max : 10
+    path: "/root/autodl-tmp/HSPS/IFC/Dataset/216_cases/216_cases_augment_0321.npz"
+  Save:
+    path: "Checkpoints/Operator/IFC_Opertor_N_1_Tprime_10"
