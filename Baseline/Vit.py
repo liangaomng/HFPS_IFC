@@ -3,24 +3,22 @@ import torch.nn.functional as F
 import torch
 from vit_pytorch.vit_3d import ViT
 class Vit_classifer(nn.Module):
-    def __init__(self,num_classes= 3,image_size= 512,patch_size= 64, num_frames = 10):             # number of frames):
+    def __init__(self,num_classes= 3,image_size= 100,patch_size= 4, num_frames = 10):             # number of frames):
         super(Vit_classifer, self).__init__()
         self.vit = ViT(
                         image_size = image_size,
                         image_patch_size = patch_size,
                         frames = num_frames,
-                        frame_patch_size= 5,
+                        frame_patch_size= 1,
                         num_classes = num_classes,
-                        dim = 4096,
+                        dim = 128,
                         depth = 1,
                         heads = 2,
-                        mlp_dim = 4096,
-                        dropout = 0.01,
+                        mlp_dim = 128,
+                        dropout = 0.1,
                         channels =1,
                         emb_dropout = 0)#video = torch.randn(4, 1, 16, 128, 128) # (batch, channels, frames, height, width)
-
-
-        
+ 
     def forward(self,x):
        
         x = torch.unsqueeze(x, 1)  # x[b, 1, t, x, y] channel

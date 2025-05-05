@@ -2,7 +2,7 @@ IFC:
   encoder:
     type: "operator"
     paras:
-      latent: 1024
+      latent: 512
   classfiers:
     type: "mlp"
     numbers: 4
@@ -13,14 +13,15 @@ IFC:
     optimzer: "Adam"
     lr: 0.001
     num_epochs: 500
-    e_stops: 100
-    batch_size: 10
+    e_stops: 10
+    batch_size: 24
 
   Data_In:
     seq_len: 10 # 20*0.05=1s
     spatial_x: 64
     spatial_y: 100
     T_prime_max: 10
-    path: "/root/autodl-tmp/HSPS/IFC/Dataset/216_cases/216_cases_augment_0321.npz"
+    train_path: "/root/autodl-tmp/HSPS/IFC/Dataset/225_cases/Train_augment_3375_cases.npz"
+    test_path: "/root/autodl-tmp/HSPS/IFC/Dataset/225_cases/Test_augment_216_cases.npz"
   Save:
-    path: "Checkpoints/Operator/IFC_Opertor_N_10_Tprime_10"
+    path: "Checkpoints/Operator/Multi-task/IFC_Opertor_N_10_Tprime_10"

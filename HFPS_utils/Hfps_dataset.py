@@ -5,7 +5,8 @@ import numpy as np
 
 def class_label(condition,sample_t):
     '''
-        # angle,radius,vel,T_min
+        # angle,radius,vel,T_min 
+        return "velocity,angle,size,how long ago?"
     '''
     #angle,radius,vel,T_min
 
@@ -84,17 +85,17 @@ class HFPS_Dataset(Dataset):
             tensor: 转换后的样本
         """
     
-        t_sample = np.random.randint(0, self.T_prime_max)  # represent the t‘ --3s
+        t_sample = np.random.randint(0, self.T_prime_max)  # represent the t‘ --3s,[0,T_prime_max)
       
         data = self.data_numpy[idx,t_sample:t_sample+(self.N*self.slice_time):self.slice_time,::self.sparse,::self.sparse]#
-        #归一化
-        # 首先对您感兴趣的第一个维度计算最小值，然后是第二个维度。
-        min_val = data.min(dim=1, keepdim=True)[0].min(dim=2, keepdim=True)[0]
-        max_val = data.max(dim=1, keepdim=True)[0].max(dim=2, keepdim=True)[0]
-
-        # 接下来进行归一化处理
-        epsilon = 1e-5  # 添加一个小常数，避免除以零的情况
-        data = (data - min_val) / (max_val - min_val + epsilon)
+        # #归一化
+        # # 首先对您感兴趣的第一个维度计算最小值，然后是第二个维度。
+        # min_val = data.min(dim=1, keepdim=True)[0].min(dim=2, keepdim=True)[0]
+        # max_val = data.max(dim=1, keepdim=True)[0].max(dim=2, keepdim=True)[0]
+        # 对整个 sample 做归一化，而不是每一帧--不破坏时间序列的物理差异--0505
+        min_val = data.min()
+        max_val = data.max()
+        data = (data - min_val) / (max_val - min_val + 1e-8)
         conditions = self.condition_tensor[idx] #list 
         class_labels = class_label(conditions,t_sample)
 

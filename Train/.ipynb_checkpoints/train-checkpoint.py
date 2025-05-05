@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, random_split, Dataset
 import numpy as np
 import yaml
 import argparse
-import copy
+
 import sys
 import os
 import pickle
@@ -28,8 +28,6 @@ class TrainManager():
         torch.manual_seed(42)  # 为CPU设置种子
         torch.cuda.manual_seed(42)  # 为当前CUDA设备设置种子
         np.random.seed(42)  
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
         
     def npz_load(self,npz_path):
         '''
@@ -40,7 +38,7 @@ class TrainManager():
         condition = data['Condition']
         data.close()
         return data_tensor,condition
-    def prepare_dataset(self,train_path,test_path,test_batch=48,worker=0):
+    def prepare_dataset(self,train_path,test_path,test_batch=48):
         
         batch_size = self.config["train"]["batch_size"]
         # 加载npz文件
@@ -50,21 +48,18 @@ class TrainManager():
         slice_time = self.config["Data_In"].get("slice_time", 1)
         T_prime_max = self.config["Data_In"].get("T_prime_max", 1)
         sparse = self.config["Data_In"].get("sparse", 1)
-        #seed
-        # 创建一个固定 seed 的 Generator
-        g = torch.Generator()
-        g.manual_seed(42)   # 42 只是示例，你可以换成任意整数
+
         #N_steps,T_prime_max decide the time
         train_dataset = HFPS_Dataset(data_numpy= train_data_tensor,
                                class_list = train_condition,
-                               N_steps= self.config["Data_In"]["seq_len"],
-                               slice_time= slice_time,T_prime_max=T_prime_max,sparse=sparse)
+                               N_steps= self.config["Data_In"]["seq_len"],slice_time= slice_time,T_prime_max=T_prime_max,sparse=sparse)
         dataset_length = len(train_dataset)
-        train_size = int(dataset_length * 0.9) # 例如：80% 作为训练集
-        val_size = dataset_length - train_size 
+        train_size = int(dataset_length * 0.7)  # 例如：90% 作为训练集
+        val_size = int(dataset_length * 0.2) 
+        test_size = dataset_length - train_size - val_size  # 剩余的作为验证集
+
+        train_dataset, val_dataset, test_dataset = random_split(train_dataset, [train_size, val_size,test_size])
         
-        train_dataset, val_dataset = random_split(train_dataset, [train_size, val_size],
-                                                    generator = g)
         # test 单独
         test_dataset = HFPS_Dataset(data_numpy= test_data_tensor,
                                class_list = test_condition,
@@ -72,18 +67,16 @@ class TrainManager():
  
         valid_dataset = val_dataset
         # DataLoader
-        # 设置 generator
-       
-        self.train_loader = DataLoader(train_dataset, batch_size= batch_size, shuffle=False)#
-        self.valid_loader = DataLoader(valid_dataset, batch_size= batch_size, shuffle=False)
-        self.test_loader = DataLoader(dataset= test_dataset, batch_size = test_batch, shuffle=False)
+        self.train_loader = DataLoader(train_dataset, batch_size= batch_size, shuffle=True)
+        self.valid_loader = DataLoader(valid_dataset, batch_size= batch_size, shuffle=True)
+        self.test_loader = DataLoader(dataset= test_dataset, batch_size = test_batch, shuffle=False, num_workers=4)
 
     def prepare_model(self):
         '''
         prepare encoder(nn.module) and classifer(nn.modulelist)
         '''
         from Baseline.IFC import IFC_model
-        from Baseline.Classifer import Classifer_mlp,Classifier_LSTM
+        from Baseline.Classifer import Classifer_mlp
         encoder,classifers = None,None
         
         seq_len =  self.config["Data_In"]["seq_len"]
@@ -116,21 +109,6 @@ class TrainManager():
             from Baseline.Vit import Vit_classifer
             classifers = nn.ModuleList([Vit_classifer(num_frames=seq_len) for _ in range(self.num_classifers)])
             self.model = IFC_model(encoder,classifers,ifc_type="Vit_based").to(self.device)
-        elif self.config["encoder"]["type"] == "Gurvan_operator":
-            '''
-                each time steps has the latent dim
-            '''
-            from Baseline.Encoders.Operator_encoder import Gurvan_OperatorEncoder
-            
-            encoder = Gurvan_OperatorEncoder(seq_len=seq_len,latent_dim=latent_dims,x=spatial_x,y=spatial_y)
-            #inputs_dims = latent_dims * seq_len # multi the time for mlp
-            if self.config["classfiers"]["type"] == "mlp":
-                inputs_dims = latent_dims * seq_len
-                classifers = nn.ModuleList([Classifer_mlp(inputs_dims) for _ in range(self.num_classifers)])
-            elif self.config["classfiers"]["type"] == "lstm":
-                inputs_dims = latent_dims
-                classifers = nn.ModuleList([Classifier_LSTM(inputs_dims) for _ in range(self.num_classifers)])
-            self.model = IFC_model(encoder,classifers,ifc_type="Encoder_based").to(self.device)
         
         
         print("numbers of classifers",self.num_classifers)
@@ -146,21 +124,19 @@ class TrainManager():
         self.train_loss =[]
         self.valid_loss = []
         self.test_acc = 0
-        self.active_tasks = self.config["classfiers"].get("active_tasks", list(range(self.num_classifers)))
-
         for epoch in range(self.config["train"]['num_epochs']):
             self.model.train()
             
             for data, target,labels in self.train_loader:
                 
-                total_loss = 0.0
                 data, target,labels = data.to(self.device), target.to(self.device),labels.to(self.device)
                 
                 self.optimizer.zero_grad()
             
                 outputs = self.model(data)
                
-                for i in self.active_tasks:  # range(self.num_classifers)
+                total_loss = 0.0
+                for i in range(self.num_classifers):  #self.num_classifers
                     
                     loss = self.criterion(outputs[:, i, :], labels[:, i])
           
@@ -182,7 +158,7 @@ class TrainManager():
             
             self.valid_loss.append(valid_loss.item())
             # 打印每个分类器的准确率
-            for i in self.active_tasks:  # range(self.num_classifers)
+            for i in range(self.num_classifers):
                 accuracy_train = 100 * self.correct_train[f"Classifer_{i}_correct"] / self.total_train[f"Classifer_{i}_total"]
                 accuracy_valid = 100 * self.correct_valid[f"Classifer_{i}_correct"] / self.total_valid[f"Classifer_{i}_total"]
                
@@ -194,12 +170,12 @@ class TrainManager():
             # Early stopping logic
             if valid_loss < self.best_loss:
                 self.best_loss = valid_loss
-                self.best_model = copy.deepcopy(self.model)
+                self.best_model = self.model
 
                 self.patience_counter = 0
                 print("Validation loss decreased, resetting patience.")
             else:
-                self.model = copy.deepcopy(self.best_model) # ensure best 
+                self.model = self.best_model # ensure best 
                 self.patience_counter += 1
                 print(f"Validation loss did not decrease, patience counter: {self.patience_counter}/{self.patience_limit}")
             
@@ -223,7 +199,7 @@ class TrainManager():
                 
                 data, target,labels = data.to(self.device), target.to(self.device),labels.to(self.device)
                 outputs = self.model(data)
-                for i in self.active_tasks: #range self.num_classifers
+                for i in range(self.num_classifers):#self.num_classifers
                     loss = self.criterion(outputs[:, i, :], labels[:, i])
                     total_loss += loss
                     # acc 
@@ -233,7 +209,7 @@ class TrainManager():
 
         average_loss = total_loss / len(loader)
         average_accuracy = 0
-        for i in self.active_tasks: 
+        for i in range(self.num_classifers):
             accuracy = 100 * self.correct_valid[f"Classifer_{i}_correct"] / self.total_valid[f"Classifer_{i}_total"] if self.total_valid[f"Classifer_{i}_total"] != 0 else 0
             average_accuracy += accuracy
             print(f"Classifier {i}: Accuracy = {accuracy:.2f}%")
@@ -243,16 +219,6 @@ class TrainManager():
         print(f"Average Accuracy test: {average_accuracy:.2f}%")
         
         return average_loss,average_accuracy
-    
-    def report(self):
-        
-        from Test.test import Test_method
-        path = self.config["Save"]["path"]+".pkl"
-        t_method = Test_method(checkpoint_path= path,
-                        task=  self.active_tasks )
-        print("report....")
-        
-        t_method.MC_test()
 
     def save(self):
         path = self.config["Save"]["path"]+".pkl"
@@ -271,7 +237,6 @@ class TrainManager():
     def pipeline(self):
         self.train()
         self.save()
-        self.report()
         print("done")
         
 if __name__ == "__main__":
