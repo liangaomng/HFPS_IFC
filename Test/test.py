@@ -21,7 +21,9 @@ class Test_method():
          loaded_object = pickle.load(file)
       self.model = loaded_object.best_model
       loaded_object.prepare_dataset(train_path = loaded_object.config["Data_In"]["train_path"],
-                                                  test_path= loaded_object.config["Data_In"]["test_path"],worker=0)
+                                                  test_path= loaded_object.config["Data_In"]["test_path"],worker=0,test_batch=12)
+      loaded_object.train_loader = None
+      loaded_object.valid_loader = None
       self.loader = loaded_object.test_loader
       self.checkpoint = loaded_object
       self.results_pth = "/root/autodl-tmp/HSPS/IFC/" + loaded_object.config["Save"]["path"] + "_results.yaml"
